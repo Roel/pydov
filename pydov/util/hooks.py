@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 """Module implementing a simple hooks system to allow late-binding actions to
 PyDOV events."""
-import gzip
+import atexit
 import os
+import uuid
+import zipfile
 from hashlib import md5
+
 from owslib.etree import etree
 
 import sys
@@ -257,97 +260,108 @@ class SimpleStatusHook(AbstractHook):
             self._write_progress('.')
 
 
-class RepeatableLogHook(AbstractHook):
-    class Mode:
-        Record, Replay = range(2)
-
-    def __init__(self, log_directory, mode):
-        # todo: werken met zipfile ipv directory?
+class RepeatableLogRecorder(AbstractHook):
+    def __init__(self, log_directory):
         self.log_directory = log_directory
-        self.mode = mode
+        self.log_archive = os.path.join(
+            self.log_directory,
+            time.strftime('pydov-archive-%Y%m%dT%H%M%S-{}.zip'.format(
+                uuid.uuid4()))
+        )
 
-        if not os.path.exists(os.path.join(log_directory, 'meta')):
-            os.makedirs(os.path.join(log_directory, 'meta'))
+        self.log_archive_file = zipfile.ZipFile(
+            self.log_archive, 'w', compression=zipfile.ZIP_DEFLATED)
 
-        if not os.path.exists(os.path.join(log_directory, 'wfs')):
-            os.makedirs(os.path.join(log_directory, 'wfs'))
+        self.lock = Lock()
 
-        if not os.path.exists(os.path.join(log_directory, 'xml')):
-            os.makedirs(os.path.join(log_directory, 'xml'))
+        atexit.register(self.pydov_exit)
+
+    def pydov_exit(self):
+        self.log_archive_file.close()
 
     def meta_received(self, url, response):
-        if self.mode == RepeatableLogHook.Mode.Record:
-            hash = md5(url.encode('utf8')).hexdigest()
-            log_path = os.path.join(self.log_directory, 'meta', hash + '.log')
+        hash = md5(url.encode('utf8')).hexdigest()
+        log_path = 'meta/' + hash + '.log'
 
-            with open(log_path, 'w') as log_file:
-                log_file.write(response.decode('utf8'))
-
-    def inject_meta_response(self, url):
-        if self.mode == RepeatableLogHook.Mode.Replay:
-            hash = md5(url.encode('utf8')).hexdigest()
-            log_path = os.path.join(self.log_directory, 'meta', hash + '.log')
-
-            if not os.path.isfile(log_path):
-                raise LogReplayError(
-                    'Failed to replay log: no entry for '
-                    'meta response of {}.'.format(hash)
-                )
-
-            with open(log_path, 'r') as log_file:
-                response = log_file.read().encode('utf8')
-
-            return response
+        if log_path not in self.log_archive_file.namelist():
+            self.log_archive_file.writestr(log_path, response.decode('utf8'))
 
     def wfs_search_result_features(self, query, features):
-        if self.mode == RepeatableLogHook.Mode.Record:
-            q = etree.tostring(query, encoding='unicode')
+        q = etree.tostring(query, encoding='unicode')
+        hash = md5(q.encode('utf8')).hexdigest()
+        log_path = 'wfs/' + hash + '.log'
 
-            hash = md5(q.encode('utf8')).hexdigest()
-            log_path = os.path.join(self.log_directory, 'wfs', hash + '.log')
-
-            with open(log_path, 'w') as log_file:
-                log_file.write(
-                    etree.tostring(features, encoding='utf8').decode('utf8'))
-
-    def inject_wfs_result_features(self, query):
-        if self.mode == RepeatableLogHook.Mode.Replay:
-            q = etree.tostring(query, encoding='unicode')
-            hash = md5(q.encode('utf8')).hexdigest()
-
-            log_path = os.path.join(self.log_directory, 'wfs', hash + '.log')
-
-            if not os.path.isfile(log_path):
-                raise LogReplayError(
-                    'Failed to replay log: no entry for '
-                    'WFS result of {}.'.format(hash)
-                )
-
-            with open(log_path, 'r') as log_file:
-                tree = log_file.read().encode('utf8')
-
-            return tree
+        if log_path not in self.log_archive_file.namelist():
+            self.log_archive_file.writestr(
+                log_path,
+                etree.tostring(features, encoding='utf8').decode('utf8'))
 
     def xml_retrieved(self, pkey_object, xml):
-        if self.mode == RepeatableLogHook.Mode.Record:
+        with self.lock:
             hash = md5(pkey_object.encode('utf8')).hexdigest()
-            log_path = os.path.join(self.log_directory, 'xml', hash + '.log')
+            log_path = 'xml/' + hash + '.log'
 
-            with open(log_path, 'w') as log_file:
-                log_file.write(xml.decode('utf8'))
+            if log_path not in self.log_archive_file.namelist():
+                self.log_archive_file.writestr(log_path, xml.decode('utf8'))
+
+
+class RepeatableLogReplayer(AbstractHook):
+    def __init__(self, log_archive):
+        self.log_archive = log_archive
+
+        self.log_archive_file = zipfile.ZipFile(
+            self.log_archive, 'r', compression=zipfile.ZIP_DEFLATED)
+
+        self.lock = Lock()
+
+        atexit.register(self.pydov_exit)
+
+    def pydov_exit(self):
+        self.log_archive_file.close()
+
+    def inject_meta_response(self, url):
+        hash = md5(url.encode('utf8')).hexdigest()
+        log_path = 'meta/' + hash + '.log'
+
+        if log_path not in self.log_archive_file.namelist():
+            raise LogReplayError(
+                'Failed to replay log: no entry for '
+                'meta response of {}.'.format(hash)
+            )
+
+        with self.log_archive_file.open(log_path, 'r') as log_file:
+            response = log_file.read()
+
+        return response
+
+    def inject_wfs_result_features(self, query):
+        q = etree.tostring(query, encoding='unicode')
+        hash = md5(q.encode('utf8')).hexdigest()
+        log_path = 'wfs/' + hash + '.log'
+
+        if log_path not in self.log_archive_file.namelist():
+            raise LogReplayError(
+                'Failed to replay log: no entry for '
+                'WFS result of {}.'.format(hash)
+            )
+
+        with self.log_archive_file.open(log_path, 'r') as log_file:
+            tree = log_file.read()
+
+        return tree
 
     def inject_xml_retrieved(self, pkey_object):
-        if self.mode == RepeatableLogHook.Mode.Replay:
+        with self.lock:
             hash = md5(pkey_object.encode('utf8')).hexdigest()
-            log_path = os.path.join(self.log_directory, 'xml', hash + '.log')
+            log_path = 'xml/' + hash + '.log'
 
-            if not os.path.isfile(log_path):
+            if log_path not in self.log_archive_file.namelist():
                 raise LogReplayError(
                     'Failed to replay log: no entry for '
                     'XML result of {}.'.format(hash)
                 )
 
-            with open(log_path, 'r') as log_file:
-                xml = log_file.read().encode('utf8')
+            with self.log_archive_file.open(log_path, 'r') as log_file:
+                xml = log_file.read()
 
             return xml
