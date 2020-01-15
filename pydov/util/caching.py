@@ -271,7 +271,17 @@ class AbstractFileCache(AbstractCache):
         if self._is_valid(datatype, key):
             try:
                 self._emit_cache_hit(url)
-                return self._load(datatype, key).encode('utf-8')
+                data = self._load(datatype, key).encode('utf-8')
+
+                for hook in pydov.hooks:
+                    hook.xml_retrieved(url, data)
+
+                    x = hook.intercept_xml_retrieved(url)
+                    if x is not None:
+                        data = x
+
+                return data
+
             except Exception:
                 pass
 
@@ -280,6 +290,13 @@ class AbstractFileCache(AbstractCache):
             self._save(datatype, key, data)
         except Exception:
             pass
+
+        for hook in pydov.hooks:
+            hook.xml_retrieved(url, data)
+
+            x = hook.intercept_xml_retrieved(url)
+            if x is not None:
+                data = x
 
         return data
 

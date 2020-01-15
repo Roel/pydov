@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 """Module implementing a simple hooks system to allow late-binding actions to
 PyDOV events."""
+import gzip
+import os
+from hashlib import md5
+from owslib.etree import etree
 
 import sys
 from multiprocessing import Lock
@@ -27,6 +31,19 @@ class AbstractHook(object):
         """
         pass
 
+    def wfs_search_query(self, query):
+        """Called upon starting a WFS search.
+
+        Includes the full WFS GetFeature request sent to the WFS server.
+
+        Parameters
+        ----------
+        query : etree.ElementTree
+            The WFS GetFeature request sent to the WFS server.
+
+        """
+        pass
+
     def wfs_search_result(self, number_of_results):
         """Called after a WFS search finished.
 
@@ -37,6 +54,24 @@ class AbstractHook(object):
 
         """
         pass
+
+    def wfs_search_result_features(self, query, features):
+        """Called after a WFS search finished.
+
+        Includes the full response from the WFS GetFeature query.
+
+        Parameters
+        ----------
+        query : etree.ElementTree
+            The WFS GetFeature request sent to the WFS server.
+        features : etree.ElementTree
+            The WFS GetFeature response containings the features.
+
+        """
+        pass
+
+    def intercept_wfs_result_features(self, query):
+        return None
 
     def xml_requested(self, pkey_object):
         """Called upon requesting an XML document of an object.
@@ -86,6 +121,26 @@ class AbstractHook(object):
 
         """
         pass
+
+    def xml_retrieved(self, pkey_object, xml):
+        """Called when the XML of a given object is retrieved, either from
+        the cache or from the remote DOV service.
+
+        Includes the permanent key of the DOV object as well as the full XML
+        representation.
+
+        Parameters
+        ----------
+        pkey_object : str
+            Permanent key of the retrieved object.
+        xml : bytes
+            The raw XML data of this DOV object as bytes.
+
+        """
+        pass
+
+    def intercept_xml_retrieved(self, pkey_object):
+        return None
 
 
 class SimpleStatusHook(AbstractHook):
@@ -192,3 +247,78 @@ class SimpleStatusHook(AbstractHook):
         """
         with self.lock:
             self._write_progress('.')
+
+
+class LogReplayError(Exception):
+    pass
+
+
+class LogHook(AbstractHook):
+    class Mode:
+        Record, Replay = range(2)
+
+    # todo: save and intercept metadataqueries too
+
+    def __init__(self, log_directory, mode):
+        # todo: werken met zipfile ipv directory?
+        self.log_directory = log_directory
+        self.mode = mode
+
+        if not os.path.exists(os.path.join(log_directory, 'wfs')):
+            os.makedirs(os.path.join(log_directory, 'wfs'))
+
+        if not os.path.exists(os.path.join(log_directory, 'xml')):
+            os.makedirs(os.path.join(log_directory, 'xml'))
+
+    def wfs_search_result_features(self, query, features):
+        if self.mode == LogHook.Mode.Record:
+            q = etree.tostring(query, encoding='unicode')
+
+            hash = md5(q.encode('utf8')).hexdigest()
+            log_path = os.path.join(self.log_directory, 'wfs', hash + '.log')
+
+            with open(log_path, 'w') as log_file:
+                log_file.write(
+                    etree.tostring(features, encoding='utf8').decode('utf8'))
+
+    def intercept_wfs_result_features(self, query):
+        if self.mode == LogHook.Mode.Replay:
+            q = etree.tostring(query, encoding='unicode')
+            hash = md5(q.encode('utf8')).hexdigest()
+
+            log_path = os.path.join(self.log_directory, 'wfs', hash + '.log')
+
+            if not os.path.isfile(log_path):
+                raise LogReplayError(
+                    'Failed to replay log: no entry for '
+                    'WFS result of {}.'.format(hash)
+                )
+
+            with open(log_path, 'r') as log_file:
+                tree = log_file.read().encode('utf8')
+
+            return tree
+
+    def xml_retrieved(self, pkey_object, xml):
+        if self.mode == LogHook.Mode.Record:
+            hash = md5(pkey_object.encode('utf8')).hexdigest()
+            log_path = os.path.join(self.log_directory, 'xml', hash + '.log')
+
+            with open(log_path, 'w') as log_file:
+                log_file.write(xml.decode('utf8'))
+
+    def intercept_xml_retrieved(self, pkey_object):
+        if self.mode == LogHook.Mode.Replay:
+            hash = md5(pkey_object.encode('utf8')).hexdigest()
+            log_path = os.path.join(self.log_directory, 'xml', hash + '.log')
+
+            if not os.path.isfile(log_path):
+                raise LogReplayError(
+                    'Failed to replay log: no entry for '
+                    'XML result of {}.'.format(hash)
+                )
+
+            with open(log_path, 'r') as log_file:
+                xml = log_file.read().encode('utf8')
+
+            return xml

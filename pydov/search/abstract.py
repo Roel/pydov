@@ -529,7 +529,7 @@ class AbstractSearch(AbstractCommon):
 
         Returns
         -------
-        bytes
+        wfs_response, wfs_getfeature_request : bytes, etree.Element
             Response of the WFS service.
 
         """
@@ -546,11 +546,12 @@ class AbstractSearch(AbstractCommon):
 
         for hook in pydov.hooks:
             hook.wfs_search_init(typename)
+            hook.wfs_search_query(wfs_getfeature_xml)
 
         return owsutil.wfs_get_feature(
             baseurl=wfs.url,
             get_feature_request=wfs_getfeature_xml
-        )
+        ), wfs_getfeature_xml
 
     def _search(self, location=None, query=None, return_fields=None,
                 sort_by=None, max_features=None, extra_wfs_fields=[]):
@@ -656,7 +657,7 @@ class AbstractSearch(AbstractCommon):
                 # Python2.7 without lxml uses 'utf-8' instead.
                 sort_by = etree.tostring(sort_by_xml, encoding='utf-8')
 
-        fts = self._get_remote_wfs_feature(
+        fts, getfeature = self._get_remote_wfs_feature(
             wfs=self.__wfs,
             typename=self._layer,
             location=location,
@@ -680,6 +681,12 @@ class AbstractSearch(AbstractCommon):
 
         for hook in pydov.hooks:
             hook.wfs_search_result(int(tree.get('numberOfFeatures')))
+            hook.wfs_search_result_features(getfeature, tree)
+
+        for hook in pydov.hooks:
+            t = hook.intercept_wfs_result_features(getfeature)
+            if t is not None:
+                tree = t
 
         return tree
 
