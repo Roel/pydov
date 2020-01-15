@@ -11,6 +11,8 @@ from multiprocessing import Lock
 
 import time
 
+from pydov.util.errors import LogReplayError
+
 
 class AbstractHook(object):
     """Abstract base class for custom hook implementations.
@@ -20,6 +22,12 @@ class AbstractHook(object):
     they need.
 
     """
+    def meta_received(self, url, response):
+        pass
+
+    def intercept_meta_response(self, url):
+        return None
+
     def wfs_search_init(self, typename):
         """Called upon starting a WFS search.
 
@@ -249,10 +257,6 @@ class SimpleStatusHook(AbstractHook):
             self._write_progress('.')
 
 
-class LogReplayError(Exception):
-    pass
-
-
 class LogHook(AbstractHook):
     class Mode:
         Record, Replay = range(2)
@@ -264,11 +268,38 @@ class LogHook(AbstractHook):
         self.log_directory = log_directory
         self.mode = mode
 
+        if not os.path.exists(os.path.join(log_directory, 'meta')):
+            os.makedirs(os.path.join(log_directory, 'meta'))
+
         if not os.path.exists(os.path.join(log_directory, 'wfs')):
             os.makedirs(os.path.join(log_directory, 'wfs'))
 
         if not os.path.exists(os.path.join(log_directory, 'xml')):
             os.makedirs(os.path.join(log_directory, 'xml'))
+
+    def meta_received(self, url, response):
+        if self.mode == LogHook.Mode.Record:
+            hash = md5(url.encode('utf8')).hexdigest()
+            log_path = os.path.join(self.log_directory, 'meta', hash + '.log')
+
+            with open(log_path, 'w') as log_file:
+                log_file.write(response.decode('utf8'))
+
+    def intercept_meta_response(self, url):
+        if self.mode == LogHook.Mode.Replay:
+            hash = md5(url.encode('utf8')).hexdigest()
+            log_path = os.path.join(self.log_directory, 'meta', hash + '.log')
+
+            if not os.path.isfile(log_path):
+                raise LogReplayError(
+                    'Failed to replay log: no entry for '
+                    'meta response of {}.'.format(hash)
+                )
+
+            with open(log_path, 'r') as log_file:
+                response = log_file.read().encode('utf8')
+
+            return response
 
     def wfs_search_result_features(self, query, features):
         if self.mode == LogHook.Mode.Record:

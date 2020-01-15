@@ -179,10 +179,10 @@ class AbstractSearch(AbstractCommon):
 
         """
         self._init_wfs()
-        layername = self._layer.split(':')[1] if ':' in self._layer else \
-            self._layer
+        # layername = self._layer.split(':')[1] if ':' in self._layer else \
+        #     self._layer
         return get_remote_schema(
-            build_dov_url('geoserver/wfs'), layername, '1.1.0')
+            build_dov_url('geoserver/wfs'), self._layer, '1.1.0')
 
     def _get_namespace(self):
         """Get the WFS namespace of the layer.
