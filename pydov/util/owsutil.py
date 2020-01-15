@@ -608,15 +608,20 @@ def get_url(url):
         Response containing the result of the GET request.
 
     """
+    response = None
+    for hook in pydov.hooks:
+        r = hook.inject_meta_response(url)
+        if r is not None:
+            response = r
+
+    if response is not None:
+        return response
+
     request = pydov.session.get(url, timeout=pydov.request_timeout)
     request.encoding = 'utf-8'
     response = request.text.encode('utf8')
 
     for hook in pydov.hooks:
         hook.meta_received(url, response)
-
-        r = hook.intercept_meta_response(url)
-        if r is not None:
-            response = r
 
     return response

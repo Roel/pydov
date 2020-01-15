@@ -59,8 +59,19 @@ def get_xsd_schema(url):
         The raw XML data of this XSD schema as bytes.
 
     """
-    return get_remote_url(url)
+    response = None
+    for hook in pydov.hooks:
+        r = hook.inject_meta_response(url)
+        if r is not None:
+            response = r
 
+    if response is not None:
+        return response
+
+    response = get_remote_url(url)
+    for hook in pydov.hooks:
+        hook.meta_received(url, response)
+    return response
 
 def get_dov_xml(url):
     """Request the XML from the remote DOV webservices and return it.

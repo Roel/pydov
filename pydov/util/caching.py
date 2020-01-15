@@ -276,7 +276,7 @@ class AbstractFileCache(AbstractCache):
                 for hook in pydov.hooks:
                     hook.xml_retrieved(url, data)
 
-                    x = hook.intercept_xml_retrieved(url)
+                    x = hook.inject_xml_retrieved(url)
                     if x is not None:
                         data = x
 
@@ -294,7 +294,7 @@ class AbstractFileCache(AbstractCache):
         for hook in pydov.hooks:
             hook.xml_retrieved(url, data)
 
-            x = hook.intercept_xml_retrieved(url)
+            x = hook.inject_xml_retrieved(url)
             if x is not None:
                 data = x
 

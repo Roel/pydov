@@ -25,7 +25,7 @@ class AbstractHook(object):
     def meta_received(self, url, response):
         pass
 
-    def intercept_meta_response(self, url):
+    def inject_meta_response(self, url):
         return None
 
     def wfs_search_init(self, typename):
@@ -78,7 +78,7 @@ class AbstractHook(object):
         """
         pass
 
-    def intercept_wfs_result_features(self, query):
+    def inject_wfs_result_features(self, query):
         return None
 
     def xml_requested(self, pkey_object):
@@ -147,7 +147,7 @@ class AbstractHook(object):
         """
         pass
 
-    def intercept_xml_retrieved(self, pkey_object):
+    def inject_xml_retrieved(self, pkey_object):
         return None
 
 
@@ -261,8 +261,6 @@ class LogHook(AbstractHook):
     class Mode:
         Record, Replay = range(2)
 
-    # todo: save and intercept metadataqueries too
-
     def __init__(self, log_directory, mode):
         # todo: werken met zipfile ipv directory?
         self.log_directory = log_directory
@@ -285,7 +283,7 @@ class LogHook(AbstractHook):
             with open(log_path, 'w') as log_file:
                 log_file.write(response.decode('utf8'))
 
-    def intercept_meta_response(self, url):
+    def inject_meta_response(self, url):
         if self.mode == LogHook.Mode.Replay:
             hash = md5(url.encode('utf8')).hexdigest()
             log_path = os.path.join(self.log_directory, 'meta', hash + '.log')
@@ -312,7 +310,7 @@ class LogHook(AbstractHook):
                 log_file.write(
                     etree.tostring(features, encoding='utf8').decode('utf8'))
 
-    def intercept_wfs_result_features(self, query):
+    def inject_wfs_result_features(self, query):
         if self.mode == LogHook.Mode.Replay:
             q = etree.tostring(query, encoding='unicode')
             hash = md5(q.encode('utf8')).hexdigest()
@@ -338,7 +336,7 @@ class LogHook(AbstractHook):
             with open(log_path, 'w') as log_file:
                 log_file.write(xml.decode('utf8'))
 
-    def intercept_xml_retrieved(self, pkey_object):
+    def inject_xml_retrieved(self, pkey_object):
         if self.mode == LogHook.Mode.Replay:
             hash = md5(pkey_object.encode('utf8')).hexdigest()
             log_path = os.path.join(self.log_directory, 'xml', hash + '.log')

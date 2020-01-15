@@ -117,8 +117,28 @@ class AbstractSearch(AbstractCommon):
         to all subclasses and instances.
         """
         if AbstractSearch.__wfs is None:
-            AbstractSearch.__wfs = WebFeatureService(
-                url=build_dov_url('geoserver/wfs'), version="1.1.0")
+            capabilities = None
+
+            for hook in pydov.hooks:
+                capa = hook.inject_meta_response(
+                    build_dov_url('geoserver/wfs') + '?version=1.1.0')
+                if capa is not None:
+                    capabilities = capa
+
+            if capabilities is None:
+                AbstractSearch.__wfs = WebFeatureService(
+                    url=build_dov_url('geoserver/wfs'), version="1.1.0")
+            else:
+                AbstractSearch.__wfs = WebFeatureService(
+                    url=build_dov_url('geoserver/wfs'), version="1.1.0",
+                    xml=capabilities)
+
+            for hook in pydov.hooks:
+                hook.meta_received(
+                    build_dov_url('geoserver/wfs') + '?version=1.1.0',
+                    etree.tostring(AbstractSearch.__wfs._capabilities,
+                                   encoding='utf8')
+                )
 
     def _init_namespace(self):
         """Initialise the WFS namespace associated with the layer.
@@ -548,6 +568,15 @@ class AbstractSearch(AbstractCommon):
             hook.wfs_search_init(typename)
             hook.wfs_search_query(wfs_getfeature_xml)
 
+        tree = None
+        for hook in pydov.hooks:
+            t = hook.inject_wfs_result_features(wfs_getfeature_xml)
+            if t is not None:
+                tree = t
+
+        if tree is not None:
+            return tree, wfs_getfeature_xml
+
         return owsutil.wfs_get_feature(
             baseurl=wfs.url,
             get_feature_request=wfs_getfeature_xml
@@ -682,11 +711,6 @@ class AbstractSearch(AbstractCommon):
         for hook in pydov.hooks:
             hook.wfs_search_result(int(tree.get('numberOfFeatures')))
             hook.wfs_search_result_features(getfeature, tree)
-
-        for hook in pydov.hooks:
-            t = hook.intercept_wfs_result_features(getfeature)
-            if t is not None:
-                tree = t
 
         return tree
 
