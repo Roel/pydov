@@ -257,7 +257,7 @@ class SimpleStatusHook(AbstractHook):
             self._write_progress('.')
 
 
-class LogHook(AbstractHook):
+class RepeatableLogHook(AbstractHook):
     class Mode:
         Record, Replay = range(2)
 
@@ -276,7 +276,7 @@ class LogHook(AbstractHook):
             os.makedirs(os.path.join(log_directory, 'xml'))
 
     def meta_received(self, url, response):
-        if self.mode == LogHook.Mode.Record:
+        if self.mode == RepeatableLogHook.Mode.Record:
             hash = md5(url.encode('utf8')).hexdigest()
             log_path = os.path.join(self.log_directory, 'meta', hash + '.log')
 
@@ -284,7 +284,7 @@ class LogHook(AbstractHook):
                 log_file.write(response.decode('utf8'))
 
     def inject_meta_response(self, url):
-        if self.mode == LogHook.Mode.Replay:
+        if self.mode == RepeatableLogHook.Mode.Replay:
             hash = md5(url.encode('utf8')).hexdigest()
             log_path = os.path.join(self.log_directory, 'meta', hash + '.log')
 
@@ -300,7 +300,7 @@ class LogHook(AbstractHook):
             return response
 
     def wfs_search_result_features(self, query, features):
-        if self.mode == LogHook.Mode.Record:
+        if self.mode == RepeatableLogHook.Mode.Record:
             q = etree.tostring(query, encoding='unicode')
 
             hash = md5(q.encode('utf8')).hexdigest()
@@ -311,7 +311,7 @@ class LogHook(AbstractHook):
                     etree.tostring(features, encoding='utf8').decode('utf8'))
 
     def inject_wfs_result_features(self, query):
-        if self.mode == LogHook.Mode.Replay:
+        if self.mode == RepeatableLogHook.Mode.Replay:
             q = etree.tostring(query, encoding='unicode')
             hash = md5(q.encode('utf8')).hexdigest()
 
@@ -329,7 +329,7 @@ class LogHook(AbstractHook):
             return tree
 
     def xml_retrieved(self, pkey_object, xml):
-        if self.mode == LogHook.Mode.Record:
+        if self.mode == RepeatableLogHook.Mode.Record:
             hash = md5(pkey_object.encode('utf8')).hexdigest()
             log_path = os.path.join(self.log_directory, 'xml', hash + '.log')
 
@@ -337,7 +337,7 @@ class LogHook(AbstractHook):
                 log_file.write(xml.decode('utf8'))
 
     def inject_xml_retrieved(self, pkey_object):
-        if self.mode == LogHook.Mode.Replay:
+        if self.mode == RepeatableLogHook.Mode.Replay:
             hash = md5(pkey_object.encode('utf8')).hexdigest()
             log_path = os.path.join(self.log_directory, 'xml', hash + '.log')
 

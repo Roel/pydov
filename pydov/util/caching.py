@@ -268,6 +268,15 @@ class AbstractFileCache(AbstractCache):
         """
         datatype, key = self._get_type_key_from_url(url)
 
+        data = None
+        for hook in pydov.hooks:
+            x = hook.inject_xml_retrieved(url)
+            if x is not None:
+                data = x
+
+        if data is not None:
+            return data
+
         if self._is_valid(datatype, key):
             try:
                 self._emit_cache_hit(url)
@@ -275,10 +284,6 @@ class AbstractFileCache(AbstractCache):
 
                 for hook in pydov.hooks:
                     hook.xml_retrieved(url, data)
-
-                    x = hook.inject_xml_retrieved(url)
-                    if x is not None:
-                        data = x
 
                 return data
 
@@ -293,10 +298,6 @@ class AbstractFileCache(AbstractCache):
 
         for hook in pydov.hooks:
             hook.xml_retrieved(url, data)
-
-            x = hook.inject_xml_retrieved(url)
-            if x is not None:
-                data = x
 
         return data
 
