@@ -2,11 +2,14 @@
 """Module implementing a simple hooks system to allow late-binding actions to
 PyDOV events."""
 import atexit
+import json
 import os
 import uuid
 import zipfile
 from hashlib import md5
+from pathlib import Path
 
+import pydov
 from owslib.etree import etree
 
 import sys
@@ -272,11 +275,27 @@ class RepeatableLogRecorder(AbstractHook):
         self.log_archive_file = zipfile.ZipFile(
             self.log_archive, 'w', compression=zipfile.ZIP_DEFLATED)
 
+        self.metadata = {
+            'pydov_version' : pydov.__version__,
+            'start_run': time.strftime('%Y%m%d-%H%M%S')
+        }
+        self.started_at = time.perf_counter()
+
+        pydov_root = Path(pydov.__file__).parent
+        for f in pydov_root.glob('**\\*.py'):
+            self.log_archive_file.write(
+                str(f), 'pydov/' + str(f.relative_to(pydov_root)))
+
         self.lock = Lock()
 
         atexit.register(self.pydov_exit)
 
     def pydov_exit(self):
+        self.metadata['end_run'] = time.strftime('%Y%m%d-%H%M%S')
+        self.metadata['ran_for'] = time.perf_counter() - self.started_at
+
+        self.log_archive_file.writestr(
+            'metadata.json', json.dumps(self.metadata, indent=2))
         self.log_archive_file.close()
 
     def meta_received(self, url, response):
@@ -330,7 +349,7 @@ class RepeatableLogReplayer(AbstractHook):
             )
 
         with self.log_archive_file.open(log_path, 'r') as log_file:
-            response = log_file.read()
+            response = log_file.read().decode('utf8')
 
         return response
 
@@ -346,7 +365,7 @@ class RepeatableLogReplayer(AbstractHook):
             )
 
         with self.log_archive_file.open(log_path, 'r') as log_file:
-            tree = log_file.read()
+            tree = log_file.read().decode('utf8')
 
         return tree
 
@@ -362,6 +381,6 @@ class RepeatableLogReplayer(AbstractHook):
                 )
 
             with self.log_archive_file.open(log_path, 'r') as log_file:
-                xml = log_file.read()
+                xml = log_file.read().decode('utf8')
 
             return xml
