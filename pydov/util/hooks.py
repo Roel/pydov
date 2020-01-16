@@ -305,6 +305,18 @@ class RepeatableLogRecorder(AbstractHook):
         if log_path not in self.log_archive_file.namelist():
             self.log_archive_file.writestr(log_path, response.decode('utf8'))
 
+    def inject_meta_response(self, url):
+        hash = md5(url.encode('utf8')).hexdigest()
+        log_path = 'meta/' + hash + '.log'
+
+        if log_path not in self.log_archive_file.namelist():
+            return None
+
+        with self.log_archive_file.open(log_path, 'r') as log_file:
+            response = log_file.read().decode('utf8')
+
+        return response
+
     def wfs_search_result_features(self, query, features):
         q = etree.tostring(query, encoding='unicode')
         hash = md5(q.encode('utf8')).hexdigest()
@@ -315,6 +327,19 @@ class RepeatableLogRecorder(AbstractHook):
                 log_path,
                 etree.tostring(features, encoding='utf8').decode('utf8'))
 
+    def inject_wfs_result_features(self, query):
+        q = etree.tostring(query, encoding='unicode')
+        hash = md5(q.encode('utf8')).hexdigest()
+        log_path = 'wfs/' + hash + '.log'
+
+        if log_path not in self.log_archive_file.namelist():
+            return None
+
+        with self.log_archive_file.open(log_path, 'r') as log_file:
+            tree = log_file.read().decode('utf8')
+
+        return tree
+
     def xml_retrieved(self, pkey_object, xml):
         with self.lock:
             hash = md5(pkey_object.encode('utf8')).hexdigest()
@@ -322,6 +347,19 @@ class RepeatableLogRecorder(AbstractHook):
 
             if log_path not in self.log_archive_file.namelist():
                 self.log_archive_file.writestr(log_path, xml.decode('utf8'))
+
+    def inject_xml_retrieved(self, pkey_object):
+        with self.lock:
+            hash = md5(pkey_object.encode('utf8')).hexdigest()
+            log_path = 'xml/' + hash + '.log'
+
+            if log_path not in self.log_archive_file.namelist():
+                return None
+
+            with self.log_archive_file.open(log_path, 'r') as log_file:
+                xml = log_file.read().decode('utf8')
+
+            return xml
 
 
 class RepeatableLogReplayer(AbstractHook):
