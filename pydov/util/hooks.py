@@ -9,6 +9,11 @@ import zipfile
 from hashlib import md5
 from pathlib import Path
 
+import numpy
+import pandas
+import requests
+
+import owslib
 import pydov
 from owslib.etree import etree
 
@@ -276,8 +281,16 @@ class RepeatableLogRecorder(AbstractHook):
             self.log_archive, 'w', compression=zipfile.ZIP_DEFLATED)
 
         self.metadata = {
-            'pydov_version' : pydov.__version__,
-            'start_run': time.strftime('%Y%m%d-%H%M%S')
+            'versions': {
+                'pydov': pydov.__version__,
+                'owslib': owslib.__version__,
+                'pandas': pandas.__version__,
+                'numpy': numpy.__version__,
+                'requests': requests.__version__
+            },
+            'timings': {
+                'start': time.strftime('%Y%m%d-%H%M%S')
+            }
         }
         self.started_at = time.perf_counter()
 
@@ -291,8 +304,9 @@ class RepeatableLogRecorder(AbstractHook):
         atexit.register(self.pydov_exit)
 
     def pydov_exit(self):
-        self.metadata['end_run'] = time.strftime('%Y%m%d-%H%M%S')
-        self.metadata['ran_for'] = time.perf_counter() - self.started_at
+        self.metadata['timings']['end'] = time.strftime('%Y%m%d-%H%M%S')
+        self.metadata['timings']['run_time_secs'] = (
+            time.perf_counter() - self.started_at)
 
         self.log_archive_file.writestr(
             'metadata.json', json.dumps(self.metadata, indent=2))
