@@ -274,7 +274,7 @@ class RepeatableLogRecorder(AbstractHook):
         self.log_archive = os.path.join(
             self.log_directory,
             time.strftime('pydov-archive-%Y%m%dT%H%M%S-{}.zip'.format(
-                uuid.uuid4()))
+                str(uuid.uuid4())[0:6]))
         )
 
         self.log_archive_file = zipfile.ZipFile(
@@ -311,6 +311,8 @@ class RepeatableLogRecorder(AbstractHook):
         self.log_archive_file.writestr(
             'metadata.json', json.dumps(self.metadata, indent=2))
         self.log_archive_file.close()
+
+        print('pydov session was saved as {}'.format(self.log_archive))
 
     def meta_received(self, url, response):
         hash = md5(url.encode('utf8')).hexdigest()
